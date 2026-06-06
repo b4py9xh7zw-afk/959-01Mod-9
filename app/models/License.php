@@ -13,15 +13,23 @@ class License {
     }
     
     public function create($data) {
-        $sql = "INSERT INTO licenses (license_key, user_id, product_name, status, expires_at, created_at) 
-                VALUES (:license_key, :user_id, :product_name, :status, :expires_at, NOW())";
+        $sql = "INSERT INTO licenses (license_key, user_id, product_id, order_id, invoice_id, original_license_id, source_license_id, product_name, license_type, status, expires_at, upgrade_count, last_upgraded_at, created_at) 
+                VALUES (:license_key, :user_id, :product_id, :order_id, :invoice_id, :original_license_id, :source_license_id, :product_name, :license_type, :status, :expires_at, :upgrade_count, :last_upgraded_at, NOW())";
         
         $params = [
             ':license_key' => $this->generateLicenseKey(),
             ':user_id' => $data['user_id'],
+            ':product_id' => $data['product_id'] ?? null,
+            ':order_id' => $data['order_id'] ?? null,
+            ':invoice_id' => $data['invoice_id'] ?? null,
+            ':original_license_id' => $data['original_license_id'] ?? null,
+            ':source_license_id' => $data['source_license_id'] ?? null,
             ':product_name' => $data['product_name'],
+            ':license_type' => $data['license_type'] ?? 'single',
             ':status' => $data['status'] ?? 'active',
-            ':expires_at' => $data['expires_at'] ?? null
+            ':expires_at' => $data['expires_at'] ?? null,
+            ':upgrade_count' => $data['upgrade_count'] ?? 0,
+            ':last_upgraded_at' => $data['last_upgraded_at'] ?? null
         ];
         
         $this->db->execute($sql, $params);
@@ -95,6 +103,22 @@ class License {
             $fields[] = "product_name = :product_name";
             $params[':product_name'] = $data['product_name'];
         }
+        if (isset($data['product_id'])) {
+            $fields[] = "product_id = :product_id";
+            $params[':product_id'] = $data['product_id'];
+        }
+        if (isset($data['order_id'])) {
+            $fields[] = "order_id = :order_id";
+            $params[':order_id'] = $data['order_id'];
+        }
+        if (isset($data['invoice_id'])) {
+            $fields[] = "invoice_id = :invoice_id";
+            $params[':invoice_id'] = $data['invoice_id'];
+        }
+        if (isset($data['license_type'])) {
+            $fields[] = "license_type = :license_type";
+            $params[':license_type'] = $data['license_type'];
+        }
         if (isset($data['status'])) {
             $fields[] = "status = :status";
             $params[':status'] = $data['status'];
@@ -106,6 +130,14 @@ class License {
         if (isset($data['user_id'])) {
             $fields[] = "user_id = :user_id";
             $params[':user_id'] = $data['user_id'];
+        }
+        if (isset($data['upgrade_count'])) {
+            $fields[] = "upgrade_count = :upgrade_count";
+            $params[':upgrade_count'] = $data['upgrade_count'];
+        }
+        if (isset($data['last_upgraded_at'])) {
+            $fields[] = "last_upgraded_at = :last_upgraded_at";
+            $params[':last_upgraded_at'] = $data['last_upgraded_at'];
         }
         
         if (empty($fields)) {
@@ -147,5 +179,9 @@ class License {
         }
         
         return ['valid' => true, 'license' => $license];
+    }
+    
+    public function getDbConnection() {
+        return $this->db->getConnection();
     }
 }

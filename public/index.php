@@ -38,6 +38,11 @@ $routes = [
     'licenses/view' => ['controller' => 'LicenseController', 'action' => 'view'],
     'licenses/update' => ['controller' => 'LicenseController', 'action' => 'update'],
     'licenses/delete' => ['controller' => 'LicenseController', 'action' => 'delete'],
+    'licenses/upgrade/preview' => ['controller' => 'UpgradeController', 'action' => 'preview'],
+    'licenses/upgrade/calculate' => ['controller' => 'UpgradeController', 'action' => 'calculate'],
+    'licenses/upgrade/do' => ['controller' => 'UpgradeController', 'action' => 'upgrade'],
+    'licenses/upgrade/history' => ['controller' => 'UpgradeController', 'action' => 'history'],
+    'licenses/downgrade' => ['controller' => 'UpgradeController', 'action' => 'downgrade'],
 ];
 
 // Default route
