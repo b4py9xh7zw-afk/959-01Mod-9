@@ -1,4 +1,5 @@
 -- 套餐升级功能所需的数据库表
+-- 注意：所有语法兼容 MySQL 8.0
 
 -- 产品表：存储所有产品和套件信息
 CREATE TABLE IF NOT EXISTS products (
@@ -175,30 +176,136 @@ CREATE TABLE IF NOT EXISTS upgrade_history (
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 使用存储过程安全地添加列（MySQL 不支持 ADD COLUMN IF NOT EXISTS）
+DROP PROCEDURE IF EXISTS add_column_if_not_exists;
+DELIMITER //
+CREATE PROCEDURE add_column_if_not_exists(
+    IN table_name VARCHAR(64),
+    IN col_name VARCHAR(64),
+    IN col_definition TEXT
+)
+BEGIN
+    DECLARE column_exists INT DEFAULT 0;
+    
+    SELECT COUNT(*) INTO column_exists
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = table_name
+    AND COLUMN_NAME = col_name;
+    
+    IF column_exists = 0 THEN
+        SET @sql = CONCAT('ALTER TABLE ', table_name, ' ADD COLUMN ', col_name, ' ', col_definition);
+        PREPARE stmt FROM @sql;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+DELIMITER ;
+
+-- 使用存储过程安全地添加索引
+DROP PROCEDURE IF EXISTS add_index_if_not_exists;
+DELIMITER //
+CREATE PROCEDURE add_index_if_not_exists(
+    IN table_name VARCHAR(64),
+    IN index_name VARCHAR(64),
+    IN index_definition TEXT
+)
+BEGIN
+    DECLARE index_exists INT DEFAULT 0;
+    
+    SELECT COUNT(*) INTO index_exists
+    FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = table_name
+    AND INDEX_NAME = index_name;
+    
+    IF index_exists = 0 THEN
+        SET @sql = CONCAT('ALTER TABLE ', table_name, ' ADD INDEX ', index_name, ' ', index_definition);
+        PREPARE stmt FROM @sql;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+DELIMITER ;
+
+-- 使用存储过程安全地添加外键
+DROP PROCEDURE IF EXISTS add_foreign_key_if_not_exists;
+DELIMITER //
+CREATE PROCEDURE add_foreign_key_if_not_exists(
+    IN table_name VARCHAR(64),
+    IN fk_name VARCHAR(64),
+    IN fk_definition TEXT
+)
+BEGIN
+    DECLARE fk_exists INT DEFAULT 0;
+    
+    SELECT COUNT(*) INTO fk_exists
+    FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE()
+    AND TABLE_NAME = table_name
+    AND CONSTRAINT_NAME = fk_name;
+    
+    IF fk_exists = 0 THEN
+        SET @sql = CONCAT('ALTER TABLE ', table_name, ' ADD CONSTRAINT ', fk_name, ' FOREIGN KEY ', fk_definition);
+        PREPARE stmt FROM @sql;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+    END IF;
+END //
+DELIMITER ;
+
 -- 扩展 licenses 表，添加产品关联和升级相关字段
-ALTER TABLE licenses 
-ADD COLUMN IF NOT EXISTS product_id INT NULL AFTER user_id,
-ADD COLUMN IF NOT EXISTS order_id INT NULL AFTER product_id,
-ADD COLUMN IF NOT EXISTS invoice_id INT NULL AFTER order_id,
-ADD COLUMN IF NOT EXISTS original_license_id INT NULL AFTER invoice_id,
-ADD COLUMN IF NOT EXISTS license_type ENUM('single', 'suite') DEFAULT 'single' AFTER product_name,
-ADD COLUMN IF NOT EXISTS upgrade_count INT NOT NULL DEFAULT 0 AFTER status,
-ADD COLUMN IF NOT EXISTS last_upgraded_at TIMESTAMP NULL AFTER upgrade_count,
-ADD COLUMN IF NOT EXISTS source_license_id INT NULL AFTER original_license_id,
-ADD INDEX IF NOT EXISTS idx_product_id (product_id),
-ADD INDEX IF NOT EXISTS idx_order_id (order_id),
-ADD INDEX IF NOT EXISTS idx_invoice_id (invoice_id),
-ADD INDEX IF NOT EXISTS idx_original_license_id (original_license_id),
-ADD INDEX IF NOT EXISTS idx_license_type (license_type),
-ADD FOREIGN KEY IF NOT EXISTS fk_licenses_product_id (product_id) REFERENCES products(id) ON DELETE SET NULL,
-ADD FOREIGN KEY IF NOT EXISTS fk_licenses_order_id (order_id) REFERENCES orders(id) ON DELETE SET NULL,
-ADD FOREIGN KEY IF NOT EXISTS fk_licenses_invoice_id (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL,
-ADD FOREIGN KEY IF NOT EXISTS fk_licenses_original_id (original_license_id) REFERENCES licenses(id) ON DELETE SET NULL,
-ADD FOREIGN KEY IF NOT EXISTS fk_licenses_source_id (source_license_id) REFERENCES licenses(id) ON DELETE SET NULL;
+-- 注意：不使用AFTER子句，避免依赖不存在的列
+CALL add_column_if_not_exists('licenses', 'product_id', 'INT NULL');
+CALL add_column_if_not_exists('licenses', 'order_id', 'INT NULL');
+CALL add_column_if_not_exists('licenses', 'invoice_id', 'INT NULL');
+CALL add_column_if_not_exists('licenses', 'original_license_id', 'INT NULL');
+CALL add_column_if_not_exists('licenses', 'source_license_id', 'INT NULL');
+CALL add_column_if_not_exists('licenses', 'license_type', "ENUM('single', 'suite') DEFAULT 'single'");
+CALL add_column_if_not_exists('licenses', 'upgrade_count', 'INT NOT NULL DEFAULT 0');
+CALL add_column_if_not_exists('licenses', 'last_upgraded_at', 'TIMESTAMP NULL');
+
+-- 添加索引
+CALL add_index_if_not_exists('licenses', 'idx_product_id', '(product_id)');
+CALL add_index_if_not_exists('licenses', 'idx_order_id', '(order_id)');
+CALL add_index_if_not_exists('licenses', 'idx_invoice_id', '(invoice_id)');
+CALL add_index_if_not_exists('licenses', 'idx_original_license_id', '(original_license_id)');
+CALL add_index_if_not_exists('licenses', 'idx_license_type', '(license_type)');
+
+-- 添加外键
+CALL add_foreign_key_if_not_exists('licenses', 'fk_licenses_product_id', '(product_id) REFERENCES products(id) ON DELETE SET NULL');
+CALL add_foreign_key_if_not_exists('licenses', 'fk_licenses_order_id', '(order_id) REFERENCES orders(id) ON DELETE SET NULL');
+CALL add_foreign_key_if_not_exists('licenses', 'fk_licenses_invoice_id', '(invoice_id) REFERENCES invoices(id) ON DELETE SET NULL');
+CALL add_foreign_key_if_not_exists('licenses', 'fk_licenses_original_id', '(original_license_id) REFERENCES licenses(id) ON DELETE SET NULL');
+CALL add_foreign_key_if_not_exists('licenses', 'fk_licenses_source_id', '(source_license_id) REFERENCES licenses(id) ON DELETE SET NULL');
 
 -- 更新 licenses 表的 status 枚举，添加升级和降级状态
-ALTER TABLE licenses 
-MODIFY COLUMN status ENUM('active', 'inactive', 'expired', 'upgraded', 'downgraded') DEFAULT 'active';
+-- 先检查当前枚举值，再决定是否需要修改
+DROP PROCEDURE IF EXISTS update_license_status_enum;
+DELIMITER //
+CREATE PROCEDURE update_license_status_enum()
+BEGIN
+    DECLARE enum_type TEXT;
+    
+    SELECT COLUMN_TYPE INTO enum_type
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'licenses'
+    AND COLUMN_NAME = 'status';
+    
+    IF enum_type NOT LIKE '%upgraded%' OR enum_type NOT LIKE '%downgraded%' THEN
+        ALTER TABLE licenses 
+        MODIFY COLUMN status ENUM('active', 'inactive', 'expired', 'upgraded', 'downgraded') DEFAULT 'active';
+    END IF;
+END //
+DELIMITER ;
+CALL update_license_status_enum();
+
+-- 清理临时存储过程
+DROP PROCEDURE IF EXISTS add_column_if_not_exists;
+DROP PROCEDURE IF EXISTS add_index_if_not_exists;
+DROP PROCEDURE IF EXISTS add_foreign_key_if_not_exists;
+DROP PROCEDURE IF EXISTS update_license_status_enum;
 
 -- 插入示例产品数据
 INSERT IGNORE INTO products (name, description, type, price, duration_days, status) VALUES
